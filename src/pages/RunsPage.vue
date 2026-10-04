@@ -2,9 +2,11 @@
 import { computed, reactive, ref } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Message, type FileItem } from '@arco-design/web-vue'
-import { getProjects, getRuns, importRuns, mergeRuns } from '@/api/http'
+import { buildChainView, getProjects, getRuns, importRuns, mergeRuns } from '@/api/http'
 import StatusTag from '@/components/StatusTag.vue'
+import ChainStateTag from '@/components/ChainStateTag.vue'
 import { useReviewStore } from '@/stores/review'
+import type { ScreenshotRun } from '@/types'
 
 const filters = reactive({
   projectId: '',
@@ -44,6 +46,8 @@ const { data: runs, isLoading } = useQuery({
 const availablePages = computed(() => [...new Set(runs.value?.map((run) => run.page) ?? [])])
 const availableDevices = computed(() => [...new Set(runs.value?.map((run) => run.device) ?? [])])
 const availableBuilds = computed(() => [...new Set(runs.value?.map((run) => run.build) ?? [])])
+
+const chainOf = (run: ScreenshotRun) => buildChainView(run)
 
 const mergeMutation = useMutation({
   mutationFn: mergeRuns,
@@ -186,6 +190,7 @@ const submitImport = async () => {
           <a-option value="approved">已批准</a-option>
           <a-option value="rejected">已驳回</a-option>
           <a-option value="merged">已合并</a-option>
+          <a-option value="unverifiable">待核对</a-option>
         </a-select>
       </a-grid-item>
     </a-grid>
@@ -230,13 +235,22 @@ const submitImport = async () => {
             <div class="sub-text">{{ record.baselineVersion }} → {{ record.currentVersion }}</div>
           </template>
         </a-table-column>
-        <a-table-column title="差异" :width="110">
+        <a-table-column title="判定链" :width="150">
           <template #cell="{ record }">
-            <b :class="{ danger: record.mismatchRate >= 5 }">{{ record.mismatchRate.toFixed(2) }}%</b>
+            <ChainStateTag :state="chainOf(record).state" :rule-version="chainOf(record).ruleVersion" />
           </template>
         </a-table-column>
-        <a-table-column title="差异区域" :width="100">
-          <template #cell="{ record }">{{ record.regions.length }} 处</template>
+        <a-table-column title="判定差异" :width="120">
+          <template #cell="{ record }">
+            <b :class="{ danger: chainOf(record).effectiveMismatchRate >= 5 }">{{ chainOf(record).effectiveMismatchRate.toFixed(2) }}%</b>
+            <div class="sub-text">原始 {{ chainOf(record).rawMismatchRate.toFixed(2) }}%</div>
+          </template>
+        </a-table-column>
+        <a-table-column title="差异区域" :width="120">
+          <template #cell="{ record }">
+            {{ chainOf(record).evaluation.regionCount }} 处
+            <div class="sub-text">折叠 {{ chainOf(record).evaluation.ignoredRegionCount }}</div>
+          </template>
         </a-table-column>
         <a-table-column title="状态" :width="100">
           <template #cell="{ record }"><StatusTag :status="record.status" /></template>

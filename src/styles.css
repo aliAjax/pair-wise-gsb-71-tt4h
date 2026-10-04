@@ -834,3 +834,91 @@ code {
     height: 590px;
   }
 }
+
+/* ---- 判定链：冲突草稿、版本提示 ---- */
+.metric-panel.tone-gold::before {
+  background: #ff9a2e;
+}
+
+.conflict-card {
+  margin-bottom: 14px;
+  border: 1px solid #ffd8bf;
+  border-radius: 8px;
+  background: #fff7e8;
+}
+
+.conflict-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.conflict-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.conflict-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid #e5e6eb;
+}
+
+.conflict-side strong {
+  font-size: 13px;
+}
+
+.conflict-side span {
+  color: #4e5969;
+  font-size: 12px;
+}
+
+.conflict-side p {
+  margin: 4px 0 0;
+  color: #86909c;
+  font-size: 12px;
+}
+
+.conflict-side.winner {
+  border-color: #7be188;
+  background: #f6ffed;
+}
+
+.conflict-side.loser {
+  border-color: #ffd8bf;
+  background: #fff7e8;
+}
+
+.conflict-row {
+  padding: 10px 0;
+  border-bottom: 1px dashed #e5e6eb;
+}
+
+.conflict-row:last-child {
+  border-bottom: 0;
+}
+
+.conflict-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.rule-hint {
+  color: #165dff;
+  font-size: 11px;
+}
+
+.run-facts small {
+  display: block;
+  color: #86909c;
+  font-size: 11px;
+}

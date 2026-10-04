@@ -3,7 +3,7 @@ defineProps<{
   label: string
   value: number | string
   note: string
-  tone?: 'blue' | 'orange' | 'red' | 'green'
+  tone?: 'blue' | 'orange' | 'red' | 'green' | 'gold'
 }>()
 </script>
 
