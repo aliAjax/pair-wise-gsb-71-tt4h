@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Message, type FileItem } from '@arco-design/web-vue'
 import { getProjects, getRuns, importRuns, mergeRuns } from '@/api/http'
 import StatusTag from '@/components/StatusTag.vue'
+import { useDecisionChain, versionLabel } from '@/composables/useDecisionChain'
 import { useReviewStore } from '@/stores/review'
 
 const filters = reactive({
@@ -30,6 +31,7 @@ const uploadForm = reactive({
 
 const queryClient = useQueryClient()
 const reviewStore = useReviewStore()
+const { judge } = useDecisionChain()
 
 const cleanFilters = computed(() =>
   Object.fromEntries(Object.entries(filters).filter(([, value]) => Boolean(value))),
@@ -39,6 +41,8 @@ const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: getProjec
 const { data: runs, isLoading } = useQuery({
   queryKey: computed(() => ['runs', cleanFilters.value]),
   queryFn: () => getRuns(cleanFilters.value),
+  refetchInterval: (query) =>
+    (query.state.data ?? []).some((run) => run.status === 'stale') ? 1500 : false,
 })
 
 const availablePages = computed(() => [...new Set(runs.value?.map((run) => run.page) ?? [])])
@@ -183,6 +187,8 @@ const submitImport = async () => {
       <a-grid-item>
         <a-select v-model="filters.status" allow-clear placeholder="全部状态">
           <a-option value="pending">待审批</a-option>
+          <a-option value="stale">重算中</a-option>
+          <a-option value="needs-check">待核对</a-option>
           <a-option value="approved">已批准</a-option>
           <a-option value="rejected">已驳回</a-option>
           <a-option value="merged">已合并</a-option>
@@ -230,13 +236,16 @@ const submitImport = async () => {
             <div class="sub-text">{{ record.baselineVersion }} → {{ record.currentVersion }}</div>
           </template>
         </a-table-column>
-        <a-table-column title="差异" :width="110">
+        <a-table-column title="差异（判定链）" :width="120">
           <template #cell="{ record }">
-            <b :class="{ danger: record.mismatchRate >= 5 }">{{ record.mismatchRate.toFixed(2) }}%</b>
+            <b :class="{ danger: judge(record).mismatchRate >= 5 }">{{ judge(record).mismatchRate.toFixed(2) }}%</b>
+            <div class="sub-text">{{ versionLabel(judge(record).ruleVersion, record.ruleVersionSource) }}</div>
           </template>
         </a-table-column>
-        <a-table-column title="差异区域" :width="100">
-          <template #cell="{ record }">{{ record.regions.length }} 处</template>
+        <a-table-column title="差异区域" :width="130">
+          <template #cell="{ record }">
+            {{ judge(record).ignoredCount }}/{{ judge(record).regionCount }} 已忽略
+          </template>
         </a-table-column>
         <a-table-column title="状态" :width="100">
           <template #cell="{ record }"><StatusTag :status="record.status" /></template>

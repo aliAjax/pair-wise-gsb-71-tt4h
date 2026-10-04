@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Message, Modal } from '@arco-design/web-vue'
-import { createRule, deleteRule, getProjects, getRules, toggleRule } from '@/api/http'
+import {
+  createRule,
+  deleteRule,
+  getApiError,
+  getProjects,
+  getRules,
+  toggleRule,
+  updateRule,
+} from '@/api/http'
+import { useDecisionChain } from '@/composables/useDecisionChain'
 import type { IgnoreRule } from '@/types'
 
 const queryClient = useQueryClient()
@@ -19,13 +28,30 @@ const form = reactive({
 
 const { data: rules, isLoading } = useQuery({ queryKey: ['rules'], queryFn: getRules })
 const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: getProjects })
+const { currentRuleVersion } = useDecisionChain()
 
-const refreshRules = async () => queryClient.invalidateQueries({ queryKey: ['rules'] })
+const refreshRules = () =>
+  Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['rules'] }),
+    queryClient.invalidateQueries({ queryKey: ['runs'] }),
+    queryClient.invalidateQueries({ queryKey: ['rule-snapshots'] }),
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+  ])
+
+const reportMutation = async (result: { ruleVersion: number; invalidatedRunIds: string[] }, action: string) => {
+  await refreshRules()
+  if (result.invalidatedRunIds.length) {
+    Message.warning(
+      `${action}已生成规则 v${result.ruleVersion}，${result.invalidatedRunIds.length} 条未审批运行立即失效并按新版本重算，已生成基线保留当时证据`,
+    )
+  } else {
+    Message.success(`${action}已记录为规则 v${result.ruleVersion}（无未审批运行判定受影响）`)
+  }
+}
 
 const createMutation = useMutation({
   mutationFn: createRule,
-  onSuccess: async () => {
-    Message.success('忽略规则已创建')
+  onSuccess: (result) => {
     modalVisible.value = false
     Object.assign(form, {
       name: '',
@@ -36,24 +62,58 @@ const createMutation = useMutation({
       maxDelta: 10,
       enabled: true,
     })
-    await refreshRules()
+    return reportMutation(result, '新规则')
   },
-  onError: (error: Error) => Message.error(error.message),
+  onError: (error: unknown) => Message.error(getApiError(error).message),
 })
 
 const toggleMutation = useMutation({
   mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => toggleRule(id, enabled),
-  onSuccess: refreshRules,
-  onError: (error: Error) => Message.error(error.message),
+  onSuccess: (result) => reportMutation(result, '规则启用状态调整'),
+  onError: (error: unknown) => Message.error(getApiError(error).message),
 })
 
 const deleteMutation = useMutation({
   mutationFn: deleteRule,
-  onSuccess: async () => {
-    Message.success('规则已删除')
-    await refreshRules()
+  onSuccess: (result) => reportMutation(result, '规则删除'),
+  onError: (error: unknown) => Message.error(getApiError(error).message),
+})
+
+const editingRule = ref<IgnoreRule | null>(null)
+const editForm = reactive({
+  name: '',
+  projectId: 'all',
+  selector: '',
+  pagePattern: '*',
+  devicePattern: '*',
+  maxDelta: 10,
+})
+const editVisible = ref(false)
+
+const openEdit = (rule: IgnoreRule) => {
+  editingRule.value = rule
+  Object.assign(editForm, {
+    name: rule.name,
+    projectId: rule.projectId,
+    selector: rule.selector,
+    pagePattern: rule.pagePattern,
+    devicePattern: rule.devicePattern,
+    maxDelta: rule.maxDelta,
+  })
+  editVisible.value = true
+}
+
+const editMutation = useMutation({
+  mutationFn: () => {
+    const rule = editingRule.value!
+    return updateRule(rule.id, { ...editForm })
   },
-  onError: (error: Error) => Message.error(error.message),
+  onSuccess: async (result) => {
+    editVisible.value = false
+    editingRule.value = null
+    await reportMutation(result, '规则作用域/色差修改')
+  },
+  onError: (error: unknown) => Message.error(getApiError(error).message),
 })
 
 const submitRule = () => {
@@ -67,7 +127,7 @@ const submitRule = () => {
 const confirmDelete = (rule: IgnoreRule) => {
   Modal.warning({
     title: '删除忽略规则',
-    content: `删除“${rule.name}”后，后续运行将重新标记该区域。`,
+    content: `删除“${rule.name}”会生成新规则版本，受影响的未审批运行将立即失效重算；已生成基线保留当时证据。`,
     hideCancel: false,
     onOk: () => deleteMutation.mutate(rule.id),
   })
@@ -75,19 +135,24 @@ const confirmDelete = (rule: IgnoreRule) => {
 
 const projectName = (id: string) =>
   id === 'all' ? '全部项目' : projects.value?.find((project) => project.id === id)?.name ?? id
+
+const currentVersion = computed(() => currentRuleVersion.value)
 </script>
 
 <template>
   <section class="page-intro compact">
     <div>
       <h2>差异忽略规则</h2>
-      <p>用稳定的 DOM 选择器和限制条件排除时间、水印、随机头像等环境噪声。</p>
+      <p>作用域或色差一改动就会推进规则版本，未审批运行立即失效重算。</p>
     </div>
-    <a-button type="primary" @click="modalVisible = true"><icon-plus /> 新建规则</a-button>
+    <a-space>
+      <a-tag color="arcoblue" size="large">当前生效版本 v{{ currentVersion }}</a-tag>
+      <a-button type="primary" @click="modalVisible = true"><icon-plus /> 新建规则</a-button>
+    </a-space>
   </section>
 
   <a-alert type="info" style="margin-bottom: 16px">
-    规则不会自动批准整张截图；启用后仅在差异报告中折叠匹配区域，高风险区域仍需人工判定。
+    审批依据锁定打开时的规则版本：规则后改不会改变旧运行审批结论与已生成基线的数字；未审批运行则立即失效并按新版本重算。
   </a-alert>
 
   <a-card class="table-panel" :bordered="false">
@@ -115,12 +180,14 @@ const projectName = (id: string) =>
             <a-switch
               :model-value="record.enabled"
               size="small"
+              :loading="toggleMutation.isPending.value"
               @change="(value: string | number | boolean) => toggleMutation.mutate({ id: record.id, enabled: Boolean(value) })"
             />
           </template>
         </a-table-column>
-        <a-table-column title="操作" :width="90">
+        <a-table-column title="操作" :width="140">
           <template #cell="{ record }">
+            <a-button type="text" size="small" @click="openEdit(record)">编辑</a-button>
             <a-button type="text" status="danger" size="small" @click="confirmDelete(record)">删除</a-button>
           </template>
         </a-table-column>
@@ -171,6 +238,53 @@ const projectName = (id: string) =>
       <a-form-item label="创建后立即启用">
         <a-switch v-model="form.enabled" />
       </a-form-item>
+    </a-form>
+  </a-modal>
+
+  <a-modal
+    v-model:visible="editVisible"
+    title="编辑规则作用域与色差"
+    :ok-loading="editMutation.isPending.value"
+    ok-text="保存并推进规则版本"
+    @ok="editMutation.mutate()"
+  >
+    <a-alert type="warning" style="margin-bottom: 16px">
+      保存后作用域或色差立即生效：未审批运行按新版本重算，已生成基线保留生成时证据。
+    </a-alert>
+    <a-form :model="editForm" layout="vertical">
+      <a-form-item label="规则名称" required>
+        <a-input v-model="editForm.name" />
+      </a-form-item>
+      <a-grid :cols="2" :col-gap="16">
+        <a-grid-item>
+          <a-form-item label="作用项目" required>
+            <a-select v-model="editForm.projectId">
+              <a-option value="all">全部项目</a-option>
+              <a-option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</a-option>
+            </a-select>
+          </a-form-item>
+        </a-grid-item>
+        <a-grid-item>
+          <a-form-item label="最大色差" required>
+            <a-input-number v-model="editForm.maxDelta" :min="0" :max="255" />
+          </a-form-item>
+        </a-grid-item>
+      </a-grid>
+      <a-form-item label="DOM 选择器" required>
+        <a-input v-model="editForm.selector" />
+      </a-form-item>
+      <a-grid :cols="2" :col-gap="16">
+        <a-grid-item>
+          <a-form-item label="页面匹配">
+            <a-input v-model="editForm.pagePattern" />
+          </a-form-item>
+        </a-grid-item>
+        <a-grid-item>
+          <a-form-item label="设备匹配">
+            <a-input v-model="editForm.devicePattern" />
+          </a-form-item>
+        </a-grid-item>
+      </a-grid>
     </a-form>
   </a-modal>
 </template>

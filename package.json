@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:chain": "node scripts/bundle-verify.cjs && node node_modules/.cache/verify-chain.mjs",
+    "verify:migration": "node scripts/bundle-verify.cjs scripts/verify-migration.mts && node node_modules/.cache/verify-migration.mjs",
+    "verify": "npm run verify:chain && npm run verify:migration"
   },
   "dependencies": {
     "@arco-design/web-vue": "^2.57.0",

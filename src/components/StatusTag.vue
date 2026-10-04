@@ -6,6 +6,8 @@ const props = defineProps<{ status: RunStatus }>()
 
 const statusMap: Record<RunStatus, { color: string; label: string }> = {
   pending: { color: 'orange', label: '待审批' },
+  stale: { color: 'purple', label: '重算中' },
+  'needs-check': { color: 'gold', label: '待核对' },
   approved: { color: 'green', label: '已批准' },
   rejected: { color: 'red', label: '已驳回' },
   merged: { color: 'arcoblue', label: '已合并' },
